@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ラップDE老GO | 文章編集ツール</title>
+<style>
+  :root {
+    --bg: #111113; --bg-alt: #1a1a1d; --fg: #f7f7f4; --fg-dim: #c7c7c0;
+    --accent: #d4ff3f; --border: #2c2c2f;
+    --font-head: "Dela Gothic One", sans-serif;
+    --font-body: "Noto Sans JP", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); line-height: 1.6;
+    padding-bottom: 120px;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(10,10,10,0.95); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 24px; display: flex; align-items: center;
+    justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  header h1 {
+    font-family: var(--font-head); font-size: 16px; margin: 0;
+    letter-spacing: 0.02em;
+  }
+  header h1 .accent { color: var(--accent); }
+  header p { margin: 4px 0 0; font-size: 12px; color: var(--fg-dim); }
+  .actions { display: flex; gap: 10px; }
+  button {
+    font-family: var(--font-body); font-size: 13px; font-weight: 700;
+    padding: 12px 22px; border-radius: 999px; border: 1px solid var(--border);
+    background: transparent; color: var(--fg); cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  button.primary { background: var(--accent); color: #0a0a0a; border-color: var(--accent); }
+  button.primary:hover { background: #c1eb2e; }
+  button:hover { border-color: var(--fg); }
+
+  main { max-width: 760px; margin: 0 auto; padding: 40px 24px; }
+
+  .section-block {
+    margin-bottom: 44px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .section-block h2 {
+    font-family: var(--font-head);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    background: var(--bg-alt);
+    margin: 0;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .field { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .field:last-child { border-bottom: none; }
+  .field label {
+    display: block; font-size: 12px; color: var(--fg-dim);
+    margin-bottom: 8px; letter-spacing: 0.02em;
+  }
+  .field input, .field textarea {
+    width: 100%; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 10px 12px; font-family: var(--font-body); font-size: 14px;
+    resize: vertical;
+  }
+  .field input:focus, .field textarea:focus {
+    outline: none; border-color: var(--accent);
+  }
+  .field .hint { font-size: 11px; color: #666; margin-top: 6px; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--accent); color: #0a0a0a; padding: 14px 24px;
+    border-radius: 999px; font-size: 13px; font-weight: 700;
+    opacity: 0; transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none; z-index: 20; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .top-note {
+    max-width: 760px; margin: 0 auto; padding: 24px 24px 0;
+    font-size: 13px; color: var(--fg-dim);
+  }
+  .top-note strong { color: var(--fg); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>ラップ<span class="accent">DE</span>老GO — 文章編集ツール</h1>
+    <p>ここで文章を編集して「content.jsを書き出す」を押すと、更新済みファイルがダウンロードされます。</p>
+  </div>
+  <div class="actions">
+    <button id="resetBtn">元に戻す</button>
+    <button id="exportBtn" class="primary">content.jsを書き出す</button>
+  </div>
+</header>
+
+<p class="top-note">
+  書き出した <strong>content.js</strong> を、元の <strong>content.js</strong> と置き換えてサイトに反映してください（プレビューはこのページには出ません）。空欄にすると、サイト側でその項目は自動的に非表示になります。
+</p>
+
+<main>
+  <form id="editorForm"></form>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="content.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // フィールド定義：セクション見出し・キー・ラベル・入力タイプ
+  const SCHEMA = [
+    { section: "ヘッダー", fields: [
+      { key: "nav_cta", label: "ナビの問い合わせボタン", type: "text" },
+    ]},
+    { section: "ヒーロー（トップ）", fields: [
+      { key: "hero_kicker", label: "キャッチ（英語コピー）", type: "text" },
+      { key: "hero_title_line1", label: "タイトル 1行目", type: "text" },
+      { key: "hero_title_line2", label: "タイトル 2行目（アクセント色）", type: "text" },
+      { key: "hero_title_line3", label: "タイトル 3行目", type: "text" },
+      { key: "hero_lead", label: "リード文（空欄でこのブロック非表示）", type: "textarea" },
+      { key: "hero_badge", label: "受賞バッジ", type: "text" },
+      { key: "hero_cta_primary", label: "メインボタン文言", type: "text" },
+      { key: "hero_cta_secondary", label: "サブボタン文言", type: "text" },
+    ]},
+    { section: "ABOUT", fields: [
+      { key: "about_label", label: "ラベル", type: "text" },
+      { key: "about_title", label: "見出し（\\n で改行）", type: "textarea" },
+      { key: "about_mission", label: "ミッション文（空欄で非表示）", type: "textarea" },
+      { key: "about_body", label: "本文", type: "textarea" },
+    ]},
+    { section: "FEATURES（3つの理由）", fields: [
+      { key: "features_label", label: "ラベル", type: "text" },
+      { key: "features_title", label: "見出し", type: "text" },
+      { key: "feature1_num", label: "① 番号", type: "text" },
+      { key: "feature1_title", label: "① タイトル", type: "text" },
+      { key: "feature1_body", label: "① 本文", type: "textarea" },
+      { key: "feature2_num", label: "② 番号", type: "text" },
+      { key: "feature2_title", label: "② タイトル", type: "text" },
+      { key: "feature2_body", label: "② 本文", type: "textarea" },
+      { key: "feature3_num", label: "③ 番号", type: "text" },
+      { key: "feature3_title", label: "③ タイトル", type: "text" },
+      { key: "feature3_body", label: "③ 本文", type: "textarea" },
+    ]},
+    { section: "ACHIEVEMENTS（受賞歴）", fields: [
+      { key: "awards_label", label: "ラベル", type: "text" },
+      { key: "awards_title", label: "見出し", type: "text" },
+      { key: "awards_lead", label: "リード文", type: "textarea" },
+      { key: "award1_title", label: "① タイトル", type: "text" },
+      { key: "award1_sub", label: "① サブ（賞名）", type: "text" },
+      { key: "award2_title", label: "② タイトル", type: "text" },
+      { key: "award2_sub", label: "② サブ（賞名）", type: "text" },
+      { key: "award3_title", label: "③ タイトル", type: "text" },
+      { key: "award3_sub", label: "③ サブ（賞名）", type: "text" },
+      { key: "awards_source_label", label: "出典表記", type: "text" },
+      { key: "awards_source_url", label: "出典リンクURL", type: "text" },
+    ]},
+    { section: "FOR（対象）", fields: [
+      { key: "target_label", label: "ラベル", type: "text" },
+      { key: "target_title", label: "見出し", type: "text" },
+      { key: "target1_title", label: "① タイトル", type: "text" },
+      { key: "target1_body", label: "① 本文", type: "textarea" },
+      { key: "target2_title", label: "② タイトル", type: "text" },
+      { key: "target2_body", label: "② 本文", type: "textarea" },
+      { key: "target3_title", label: "③ タイトル", type: "text" },
+      { key: "target3_body", label: "③ 本文", type: "textarea" },
+    ]},
+    { section: "CONTACT（お問い合わせ）", fields: [
+      { key: "cta_label", label: "ラベル", type: "text" },
+      { key: "cta_title", label: "見出し（\\n で改行）", type: "textarea" },
+      { key: "cta_body", label: "本文", type: "textarea" },
+      { key: "cta_button", label: "ボタン文言", type: "text" },
+      { key: "cta_email_label", label: "メールラベル", type: "text" },
+      { key: "cta_email", label: "メールアドレス", type: "text" },
+    ]},
+    { section: "フッター", fields: [
+      { key: "footer_service_name", label: "サービス名", type: "text" },
+      { key: "footer_tagline", label: "タグライン", type: "text" },
+      { key: "footer_copyright", label: "コピーライト", type: "text" },
+    ]},
+  ];
+
+  const ORIGINAL = JSON.parse(JSON.stringify(SITE_CONTENT));
+  const form = document.getElementById("editorForm");
+  const toast = document.getElementById("toast");
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 2200);
+  }
+
+  function buildForm() {
+    form.innerHTML = "";
+    SCHEMA.forEach((group) => {
+      const block = document.createElement("div");
+      block.className = "section-block";
+
+      const h2 = document.createElement("h2");
+      h2.textContent = group.section;
+      block.appendChild(h2);
+
+      group.fields.forEach((f) => {
+        if (!(f.key in SITE_CONTENT)) return;
+        const wrap = document.createElement("div");
+        wrap.className = "field";
+
+        const label = document.createElement("label");
+        label.setAttribute("for", "f_" + f.key);
+        label.textContent = f.label;
+        wrap.appendChild(label);
+
+        let input;
+        if (f.type === "textarea") {
+          input = document.createElement("textarea");
+          input.rows = 3;
+        } else {
+          input = document.createElement("input");
+          input.type = "text";
+        }
+        input.id = "f_" + f.key;
+        input.name = f.key;
+        input.value = SITE_CONTENT[f.key] || "";
+        wrap.appendChild(input);
+
+        block.appendChild(wrap);
+      });
+
+      form.appendChild(block);
+    });
+  }
+
+  function collectValues() {
+    const data = {};
+    Object.keys(SITE_CONTENT).forEach((key) => {
+      const el = document.getElementById("f_" + key);
+      data[key] = el ? el.value : SITE_CONTENT[key];
+    });
+    return data;
+  }
+
+  function exportContentJs() {
+    const data = collectValues();
+    const lines = Object.keys(data).map((key) => {
+      const val = String(data[key]).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+      return `  ${key}: "${val}",`;
+    });
+
+    const fileContent =
+`/* content.js — ラップDE老GO 文言データ（editor.htmlから書き出し） */
+const SITE_CONTENT = {
+${lines.join("\n")}
+};
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = SITE_CONTENT;
+}
+`;
+
+    const blob = new Blob([fileContent], { type: "text/javascript" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "content.js";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast("content.js をダウンロードしました");
+  }
+
+  document.getElementById("exportBtn").addEventListener("click", exportContentJs);
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    Object.keys(ORIGINAL).forEach((key) => {
+      const el = document.getElementById("f_" + key);
+      if (el) el.value = ORIGINAL[key];
+    });
+    showToast("元の内容に戻しました");
+  });
+
+  buildForm();
+})();
+</script>
+</body>
+</html>
